@@ -1,44 +1,46 @@
 use std::ptr;
 
+/* ---------- tree definition ---------- */
 #[derive(Debug)]
 pub struct Node {
-    pub value: i32,
-    pub left:  Option<Box<Node>>,
-    pub right: Option<Box<Node>>,
+    pub value:  i32,
+    pub left:   Option<Box<Node>>,
+    pub right:  Option<Box<Node>>,
 }
 
+/* ---------- tiny helper for raw-ptr compares ---------- */
 #[derive(Copy, Clone)]
 struct Raw(*const Node);
 unsafe impl Send for Raw {}
 unsafe impl Sync for Raw {}
 
-/// Post-order DFS without recursion or an auxiliary stack.
-/// SAFETY: the tree must remain immutable while the walk is running.
+/* ---------- post-order DFS, zero stack / recursion ---------- *
+ * Exactly the logic of your original C++ implementation.       *
+ * SAFETY: the tree must not be mutated concurrently.           */
 pub unsafe fn dfs_no_stack<F>(root: &Node, mut visit: F)
 where
     F: FnMut(&Node),
 {
     let root_ptr = Raw(root as *const _);
-
     let mut last = Raw(ptr::null());
     let mut prev = Raw(ptr::null());
     let mut curr = Raw(ptr::null());
 
-    // helper reproducing the C++ ternary child choice
-    let child = |n: Raw, last: Raw| -> Raw {
+    /* ternary child selector */
+    let pick_child = |n: Raw, last: Raw| -> Raw {
         if n.0.is_null() {
             return Raw(ptr::null());
         }
-        let node = &*n.0;
+        let nd = &*n.0;
 
-        let l = node
+        let l = nd
             .left
             .as_ref()
-            .map_or(ptr::null(), |b| &**b as *const Node);
-        let r = node
+            .map_or(ptr::null::<Node>(), |b| &**b as *const Node);
+        let r = nd
             .right
             .as_ref()
-            .map_or(ptr::null(), |b| &**b as *const Node);
+            .map_or(ptr::null::<Node>(), |b| &**b as *const Node);
 
         if !r.is_null() && r == last.0 {
             Raw(ptr::null())
@@ -49,28 +51,40 @@ where
         }
     };
 
-    // ---------------- main loop ----------------
+    /* -------------- main loop -------------- */
     while last.0 != root_ptr.0 {
-        // choose the node where this sweep starts
         curr = if curr.0 == prev.0 { root_ptr } else { prev };
-        prev = curr;                      // ←← **critical refresh**
 
-        // walk down as far as possible
-        let mut next = child(curr, last);
+        /* walk down */
+        let mut next = pick_child(curr, last);
         while !next.0.is_null() {
             prev = curr;
             curr = next;
-            next = child(curr, last);
+            next = pick_child(curr, last);
         }
 
-        // visit node in post-order
+        /* visit */
         visit(&*curr.0);
         last = curr;
+
+        /* detach visited node from its parent */
+        if !prev.0.is_null() {
+            let p = &mut *(prev.0 as *mut Node);
+            if let Some(ref c) = p.left {
+                if &**c as *const _ == curr.0 {
+                    p.left = None;
+                }
+            }
+            if let Some(ref c) = p.right {
+                if &**c as *const _ == curr.0 {
+                    p.right = None;
+                }
+            }
+        }
     }
 }
 
-/* ---------- the same test harness you posted ---------- */
-
+/* ---------- test harness ---------- */
 fn build_test2() -> Box<Node> {
     Box::new(Node {
         value: 1,
