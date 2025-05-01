@@ -111,23 +111,21 @@ where F: FnMut(&Node) {
             if !last_visit.0.is_null() && !current.0.is_null() {
                 let curr_ref = &*current.0;
                 if let Some(ref right) = curr_ref.right {
-                    let mut _last_visit_on_right = false;
-                    let mut last_visit_on_right = false;
-                    
-                    // Create a finder pointer initialized to the right node
+                    // Check if last_visit is on the right path
+                    // We're keeping this code for compatibility with the C++ version,
+                    // but not using the results currently
                     let mut finder = NodePtr(&**right);
                     
                     while !finder.0.is_null() {
                         let finder_ref = &*finder.0;
                         if let Some(ref left) = finder_ref.left {
-                            _last_visit_on_right = true;
-                            last_visit_on_right = true;
+                            // Last visit is on right path
                             break;
                         }
                         
                         if let Some(ref right) = finder_ref.right {
                             if &**right as *const Node == last_visit.0 {
-                                last_visit_on_right = true;
+                                // Last visit is on right path
                                 break;
                             }
                             finder = NodePtr(&**right);
@@ -135,17 +133,15 @@ where F: FnMut(&Node) {
                             break;
                         }
                     }
-                    // last_visit_on_right is set but not used, preserving the original C++ behavior
                 }
             }
             
             // Travel down to leaf node
             let next = next; // Use the next variable from the outer scope
             if !next.0.is_null() {
+            // Travel down to leaf node
+            if !next.0.is_null() {
                 let mut next_ptr = next;
-                
-                while !next_ptr.0.is_null() {
-                    prev = current;
                     current = next_ptr;
                     
                     let curr_ref = &*current.0;
