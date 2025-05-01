@@ -7,66 +7,59 @@ pub struct Node {
     pub right: Option<Box<Node>>,
 }
 
-/// Helper that lets us compare / copy raw pointers without sprinkling `*const _` everywhere.
 #[derive(Copy, Clone)]
 struct Raw(*const Node);
 unsafe impl Send for Raw {}
 unsafe impl Sync for Raw {}
 
-/// Post-order DFS **without** a stack / recursion – identical to the original C++.
+/// Post-order DFS without recursion or an auxiliary stack.
+/// (⚠️ relies on `unsafe`; tree must stay immutable while walking.)
 pub unsafe fn dfs_no_stack<F>(root: &Node, mut visit: F)
 where
     F: FnMut(&Node),
 {
-    let root_ptr   = Raw(root as *const _);
-    let mut last   = Raw(ptr::null());
-    let mut prev   = Raw(ptr::null());
-    let mut curr   = Raw(ptr::null());
-    let mut next: Raw;
+    let root_ptr = Raw(root as *const _);
+    let mut last = Raw(ptr::null());
+    let mut prev = Raw(ptr::null());
+    let mut curr = Raw(ptr::null());
 
-    // --- helper closure: given `curr` and `last`, pick the next child exactly as in the C++ ternary ---
-    let mut child = |curr: Raw, last: Raw| -> Raw {
-        if curr.0.is_null() {
+    // helper reproducing the C++ ternary child selection
+    let child = |n: Raw, last: Raw| -> Raw {
+        if n.0.is_null() {
             return Raw(ptr::null());
         }
-        let n = &*curr.0;
-        match (&n.left, &n.right) {
-            (Some(l), Some(r)) => {
-                if (&**r as *const _) == last.0 {
-                    Raw(ptr::null())
-                } else if (&**l as *const _) == last.0 {
-                    Raw(&**r)
-                } else {
-                    Raw(&**l)
-                }
-            }
-            (Some(l), None) => {
-                if (&**l as *const _) == last.0 { Raw(ptr::null()) } else { Raw(&**l) }
-            }
-            (None, Some(r)) => {
-                if (&**r as *const _) == last.0 { Raw(ptr::null()) } else { Raw(&**r) }
-            }
-            (None, None) => Raw(ptr::null()),
+        let node = &*n.0;
+        let l = node.left.as_deref().map_or(ptr::null(), |x| x as *const _);
+        let r = node.right.as_deref().map_or(ptr::null(), |x| x as *const _);
+
+        if !r.is_null() && r == last.0 {
+            Raw(ptr::null())
+        } else if l == last.0 {
+            Raw(r)
+        } else {
+            Raw(l)
         }
     };
 
-    // ---------------- main loop (verbatim logic of the C++ original) ----------------
     while last.0 != root_ptr.0 {
+        // pick the node to start the downward sweep
         if curr.0 == prev.0 {
             curr = root_ptr;
         } else {
             curr = prev;
         }
 
-        next = child(curr, last);
+        prev = curr;                     //  ←← **critical refresh**
 
-        // descend as far as possible
+        // walk as far down as possible
+        let mut next = child(curr, last);
         while !next.0.is_null() {
             prev = curr;
             curr = next;
             next = child(curr, last);
         }
 
+        // visit in post-order
         visit(&*curr.0);
         last = curr;
     }
