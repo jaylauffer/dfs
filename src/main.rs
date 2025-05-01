@@ -1,6 +1,5 @@
 use std::ptr;
 
-/// A plain binary-tree node.
 #[derive(Debug)]
 pub struct Node {
     pub value: i32,
@@ -8,87 +7,69 @@ pub struct Node {
     pub right: Option<Box<Node>>,
 }
 
-/// Post-order depth-first search, Morris version (no stack, no recursion).
-///
-/// The tree is *temporarily* threaded along some `.right` links;
-/// those links are put back before the function returns.
-///
-/// # Safety
-/// We create raw pointers to `Node` and mutate `.right` links even though
-/// the caller handed us only an `&mut Node`.  That is fine **iff**
-/// the caller does **not** touch the tree (read or write) while this
-/// function is running.
-pub unsafe fn dfs_post_morris<F>(root: &mut Node, mut visit: F)
+#[derive(Copy, Clone)]
+struct Raw(*const Node);
+unsafe impl Send for Raw {}
+unsafe impl Sync for Raw {}
+
+/// Post-order DFS without recursion or an auxiliary stack.
+/// SAFETY: the tree must remain immutable while the walk is running.
+pub unsafe fn dfs_no_stack<F>(root: &Node, mut visit: F)
 where
     F: FnMut(&Node),
 {
-    // Dummy node whose left child is the real root.
-    let mut dummy = Node {
-        value: 0,
-        left:  Some(Box::from_raw(root as *mut _)),
-        right: None,
+    let root_ptr = Raw(root as *const _);
+
+    let mut last = Raw(ptr::null());
+    let mut prev = Raw(ptr::null());
+    let mut curr = Raw(ptr::null());
+
+    // helper reproducing the C++ ternary child choice
+    let child = |n: Raw, last: Raw| -> Raw {
+        if n.0.is_null() {
+            return Raw(ptr::null());
+        }
+        let node = &*n.0;
+
+        let l = node
+            .left
+            .as_ref()
+            .map_or(ptr::null(), |b| &**b as *const Node);
+        let r = node
+            .right
+            .as_ref()
+            .map_or(ptr::null(), |b| &**b as *const Node);
+
+        if !r.is_null() && r == last.0 {
+            Raw(ptr::null())
+        } else if l == last.0 {
+            Raw(r)
+        } else {
+            Raw(l)
+        }
     };
-    // We will use raw pointers everywhere to stay close to the metal.
-    let mut cur: *mut Node = &mut dummy;
-
-    // Helper: reverse the `.right` pointers along [from … to] and return `to`.
-    unsafe fn reverse(mut from: *mut Node, mut to: *mut Node) {
-        if from == to { return; }
-        let mut prev  = ptr::null_mut();
-        while from != to {
-            let next = (*from).right.as_mut().map_or(ptr::null_mut(), |b| &mut **b);
-            (*from).right = if prev.is_null() { None } else { Some(Box::from_raw(prev)) };
-            prev = from;
-            from = next;
-        }
-        (*to).right = if prev.is_null() { None } else { Some(Box::from_raw(prev)) };
-    }
-
-    // Helper: walk the chain [from … to] (inclusive) **after it was reversed**
-    unsafe fn walk_chain<F>(mut from: *mut Node, to: *mut Node, mut f: F)
-    where
-        F: FnMut(&Node),
-    {
-        while from != ptr::null_mut() {
-            f(&*from);
-            if from == to { break; }
-            from = (*from).right.as_mut().map_or(ptr::null_mut(), |b| &mut **b);
-        }
-    }
 
     // ---------------- main loop ----------------
-    while !cur.is_null() {
-        if let Some(ref mut left_box) = (*cur).left {
-            // 1️⃣ find predecessor
-            let mut pred: *mut Node = &mut **left_box;
-            while let Some(ref mut r) = (*pred).right {
-                if &mut **r as *mut _ == cur { break; }
-                pred = &mut **r;
-            }
-            if (*pred).right.is_none() {
-                // 1st visit: thread and go left
-                (*pred).right = Some(Box::from_raw(cur));
-                cur = &mut **left_box;
-            } else {
-                // 2nd visit: unthread, output the left-subtree in reverse
-                (*pred).right.take();
-                let from = &mut **left_box as *mut _;
-                let to   = pred;
-                reverse(from, to);
-                walk_chain(to, from, |n| visit(n));
-                reverse(to, from);          // restore pointers
-                cur = (*cur).right.as_mut().map_or(ptr::null_mut(), |b| &mut **b);
-            }
-        } else {
-            // No left child – straightforward Morris step
-            cur = (*cur).right.as_mut().map_or(ptr::null_mut(), |b| &mut **b);
-        }
-    }
+    while last.0 != root_ptr.0 {
+        // choose the node where this sweep starts
+        curr = if curr.0 == prev.0 { root_ptr } else { prev };
+        prev = curr;                      // ←← **critical refresh**
 
-    // Put the real root back under `dummy` so its ownership is unchanged.
-    let _ = dummy.left.take();      // drop the Box we created from `root`
+        // walk down as far as possible
+        let mut next = child(curr, last);
+        while !next.0.is_null() {
+            prev = curr;
+            curr = next;
+            next = child(curr, last);
+        }
+
+        // visit node in post-order
+        visit(&*curr.0);
+        last = curr;
+    }
 }
 
+/* ---------- the same test harness you posted ---------- */
 
 fn build_test2() -> Box<Node> {
     Box::new(Node {
@@ -102,7 +83,7 @@ fn build_test2() -> Box<Node> {
             })),
             right: Some(Box::new(Node {
                 value: 5,
-                left: Some(Box::new(Node { value: 9,  left: None, right: None })),
+                left: Some(Box::new(Node { value: 9, left: None, right: None })),
                 right: Some(Box::new(Node {
                     value: 10,
                     left: Some(Box::new(Node { value: 11, left: None, right: None })),
@@ -119,8 +100,9 @@ fn build_test2() -> Box<Node> {
 }
 
 fn main() {
-    let mut tree = build_test2();          // same builder you posted
+    let tree = build_test2();
     unsafe {
-        dfs_post_morris(&mut *tree, |n| println!("{}", n.value));
+        dfs_no_stack(&tree, |n| print!("{} ", n.value));
     }
+    println!();
 }
