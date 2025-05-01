@@ -12,8 +12,8 @@ struct Raw(*const Node);
 unsafe impl Send for Raw {}
 unsafe impl Sync for Raw {}
 
-/// Post-order DFS without recursion or an auxiliary stack.
-/// (⚠️ relies on `unsafe`; tree must stay immutable while walking.)
+/// Post-order DFS with no recursion / stack.
+/// SAFETY: the tree must not be mutated while this runs.
 pub unsafe fn dfs_no_stack<F>(root: &Node, mut visit: F)
 where
     F: FnMut(&Node),
@@ -23,14 +23,21 @@ where
     let mut prev = Raw(ptr::null());
     let mut curr = Raw(ptr::null());
 
-    // helper reproducing the C++ ternary child selection
+    // child-selection helper = C++ ternary
     let child = |n: Raw, last: Raw| -> Raw {
         if n.0.is_null() {
             return Raw(ptr::null());
         }
         let node = &*n.0;
-        let l = node.left.as_deref().map_or(ptr::null(), |x| x as *const _);
-        let r = node.right.as_deref().map_or(ptr::null(), |x| x as *const _);
+
+        let l: *const Node = node
+            .left
+            .as_deref()
+            .map_or(ptr::null::<Node>(), |x| x as *const Node);
+        let r: *const Node = node
+            .right
+            .as_deref()
+            .map_or(ptr::null::<Node>(), |x| x as *const Node);
 
         if !r.is_null() && r == last.0 {
             Raw(ptr::null())
@@ -42,16 +49,9 @@ where
     };
 
     while last.0 != root_ptr.0 {
-        // pick the node to start the downward sweep
-        if curr.0 == prev.0 {
-            curr = root_ptr;
-        } else {
-            curr = prev;
-        }
+        curr = if curr.0 == prev.0 { root_ptr } else { prev };
+        prev = curr;                       // keep prev one step behind
 
-        prev = curr;                     //  ←← **critical refresh**
-
-        // walk as far down as possible
         let mut next = child(curr, last);
         while !next.0.is_null() {
             prev = curr;
@@ -59,7 +59,6 @@ where
             next = child(curr, last);
         }
 
-        // visit in post-order
         visit(&*curr.0);
         last = curr;
     }
