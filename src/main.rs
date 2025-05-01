@@ -114,13 +114,15 @@ where F: FnMut(&Node) {
                     let mut _last_visit_on_right = false;
                     let mut last_visit_on_right = false;
                     
+                    // Create a finder pointer initialized to the right node
+                    let mut finder = NodePtr(&**right);
+                    
                     while !finder.0.is_null() {
                         let finder_ref = &*finder.0;
                         if let Some(ref left) = finder_ref.left {
-                                _last_visit_on_right = true;
-                                last_visit_on_right = true;
-                                break;
-                            }
+                            _last_visit_on_right = true;
+                            last_visit_on_right = true;
+                            break;
                         }
                         
                         if let Some(ref right) = finder_ref.right {
@@ -135,9 +137,10 @@ where F: FnMut(&Node) {
                     }
                     // last_visit_on_right is set but not used, preserving the original C++ behavior
                 }
-            }
-            
             // Travel down to leaf node
+            let next = next; // Use the next variable from the outer scope
+            if !next.0.is_null() {
+                let mut next_ptr = next;
             if !next.0.is_null() {
                 let mut next_ptr = next;
                 
