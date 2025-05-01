@@ -137,10 +137,10 @@ where F: FnMut(&Node) {
                     }
                     // last_visit_on_right is set but not used, preserving the original C++ behavior
                 }
+            }
+            
             // Travel down to leaf node
             let next = next; // Use the next variable from the outer scope
-            if !next.0.is_null() {
-                let mut next_ptr = next;
             if !next.0.is_null() {
                 let mut next_ptr = next;
                 
