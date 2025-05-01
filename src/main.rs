@@ -1,183 +1,108 @@
-fn main() {
-    let tree = build_test2();
-    println!("DFS traversal:");
-    dfs(&tree, |node| println!("{}", node.value));
+use std::ptr;
+
+#[derive(Debug)]
+pub struct Node {
+    pub value: i32,
+    pub left:  Option<Box<Node>>,
+    pub right: Option<Box<Node>>,
 }
 
-struct Node {
-    value: i32,
-    left: Option<Box<Node>>,
-    right: Option<Box<Node>>,
-}
+/// Helper that lets us compare / copy raw pointers without sprinkling `*const _` everywhere.
+#[derive(Copy, Clone)]
+struct Raw(*const Node);
+unsafe impl Send for Raw {}
+unsafe impl Sync for Raw {}
 
-impl Node {
-    fn new(value: i32, left: Option<Box<Node>>, right: Option<Box<Node>>) -> Self {
-        Node { value, left, right }
+/// Post-order DFS **without** a stack / recursion – identical to the original C++.
+pub unsafe fn dfs_no_stack<F>(root: &Node, mut visit: F)
+where
+    F: FnMut(&Node),
+{
+    let root_ptr   = Raw(root as *const _);
+    let mut last   = Raw(ptr::null());
+    let mut prev   = Raw(ptr::null());
+    let mut curr   = Raw(ptr::null());
+    let mut next: Raw;
+
+    // --- helper closure: given `curr` and `last`, pick the next child exactly as in the C++ ternary ---
+    let mut child = |curr: Raw, last: Raw| -> Raw {
+        if curr.0.is_null() {
+            return Raw(ptr::null());
+        }
+        let n = &*curr.0;
+        match (&n.left, &n.right) {
+            (Some(l), Some(r)) => {
+                if (&**r as *const _) == last.0 {
+                    Raw(ptr::null())
+                } else if (&**l as *const _) == last.0 {
+                    Raw(&**r)
+                } else {
+                    Raw(&**l)
+                }
+            }
+            (Some(l), None) => {
+                if (&**l as *const _) == last.0 { Raw(ptr::null()) } else { Raw(&**l) }
+            }
+            (None, Some(r)) => {
+                if (&**r as *const _) == last.0 { Raw(ptr::null()) } else { Raw(&**r) }
+            }
+            (None, None) => Raw(ptr::null()),
+        }
+    };
+
+    // ---------------- main loop (verbatim logic of the C++ original) ----------------
+    while last.0 != root_ptr.0 {
+        if curr.0 == prev.0 {
+            curr = root_ptr;
+        } else {
+            curr = prev;
+        }
+
+        next = child(curr, last);
+
+        // descend as far as possible
+        while !next.0.is_null() {
+            prev = curr;
+            curr = next;
+            next = child(curr, last);
+        }
+
+        visit(&*curr.0);
+        last = curr;
     }
 }
 
-// Build the second test tree from the C++ implementation
 fn build_test2() -> Box<Node> {
-    Box::new(Node::new(
-        1,
-        Some(Box::new(Node::new(
-            2,
-            Some(Box::new(Node::new(
-                4, 
-                Some(Box::new(Node::new(8, None, None))), 
-                None
-            ))),
-            Some(Box::new(Node::new(
-                5,
-                Some(Box::new(Node::new(9, None, None))),
-                Some(Box::new(Node::new(
-                    10,
-                    Some(Box::new(Node::new(11, None, None))),
-                    Some(Box::new(Node::new(12, None, None)))
-                )))
-            )))
-        ))),
-        Some(Box::new(Node::new(
-            3,
-            Some(Box::new(Node::new(6, None, None))),
-            Some(Box::new(Node::new(7, None, None)))
-        )))
-    ))
+    Box::new(Node {
+        value: 1,
+        left: Some(Box::new(Node {
+            value: 2,
+            left: Some(Box::new(Node {
+                value: 4,
+                left: Some(Box::new(Node { value: 8, left: None, right: None })),
+                right: None,
+            })),
+            right: Some(Box::new(Node {
+                value: 5,
+                left: Some(Box::new(Node { value: 9,  left: None, right: None })),
+                right: Some(Box::new(Node {
+                    value: 10,
+                    left: Some(Box::new(Node { value: 11, left: None, right: None })),
+                    right: Some(Box::new(Node { value: 12, left: None, right: None })),
+                })),
+            })),
+        })),
+        right: Some(Box::new(Node {
+            value: 3,
+            left: Some(Box::new(Node { value: 6, left: None, right: None })),
+            right: Some(Box::new(Node { value: 7, left: None, right: None })),
+        })),
+    })
 }
 
-// Iterative DFS without using an explicit stack data structure
-fn dfs<F>(root: &Box<Node>, mut visit: F) 
-where F: FnMut(&Node) {
-    // Using raw pointers for traversal logic, similar to the C++ version
-    #[derive(Copy, Clone)]
-    struct NodePtr(*const Node);
-    unsafe impl Send for NodePtr {}
-    unsafe impl Sync for NodePtr {}
-    
-    // Setup traversal pointers
-    let root_ptr = NodePtr(&**root as *const Node);
-    let mut last_visit = NodePtr(std::ptr::null());
-    let mut prev = NodePtr(std::ptr::null());
-    let mut current = NodePtr(std::ptr::null());
-    
+fn main() {
+    let tree = build_test2();
     unsafe {
-        while last_visit.0 != root_ptr.0 {
-            // Set current node based on previous
-            if current.0 == prev.0 {
-                current = root_ptr;
-            } else {
-                current = prev;
-            }
-            
-            // Determine next node using the same logic as C++ version
-            let next = {
-                if !current.0.is_null() {
-                    let curr_ref = &*current.0;
-                    if let Some(ref right) = curr_ref.right {
-                        if &**right as *const Node == last_visit.0 {
-                            NodePtr(std::ptr::null())
-                        } else if let Some(ref left) = curr_ref.left {
-                            if &**left as *const Node == last_visit.0 {
-                                if let Some(ref right) = curr_ref.right {
-                                    NodePtr(&**right)
-                                } else {
-                                    NodePtr(std::ptr::null())
-                                }
-                            } else {
-                                NodePtr(&**left)
-                            }
-                        } else {
-                            if let Some(ref left) = curr_ref.left {
-                                NodePtr(&**left)
-                            } else {
-                                NodePtr(&**right)
-                            }
-                        }
-                    } else if let Some(ref left) = curr_ref.left {
-                        if &**left as *const Node == last_visit.0 {
-                            NodePtr(std::ptr::null())
-                        } else {
-                            NodePtr(&**left)
-                        }
-                    } else {
-                        NodePtr(std::ptr::null())
-                    }
-                } else {
-                    NodePtr(std::ptr::null())
-                }
-            };
-
-            // Check if current node had a lastVisit on right path (equivalent to C++ code)
-            if !last_visit.0.is_null() && !current.0.is_null() {
-                let curr_ref = &*current.0;
-                if let Some(ref right) = curr_ref.right {
-                    // Check if last_visit is on the right path
-                    // We're keeping this code for compatibility with the C++ version,
-                    // but not using the results currently
-                    let mut finder = NodePtr(&**right);
-                    
-                    while !finder.0.is_null() {
-                        let finder_ref = &*finder.0;
-                        if let Some(ref left) = finder_ref.left {
-                            // Last visit is on right path
-                            break;
-                        }
-                        
-                        if let Some(ref right) = finder_ref.right {
-                            if &**right as *const Node == last_visit.0 {
-                                // Last visit is on right path
-                                break;
-                            }
-                            finder = NodePtr(&**right);
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Travel down to leaf node
-            let next = next; // Use the next variable from the outer scope
-            if !next.0.is_null() {
-            // Travel down to leaf node
-            if !next.0.is_null() {
-                let mut next_ptr = next;
-                    current = next_ptr;
-                    
-                    let curr_ref = &*current.0;
-                    next_ptr = {
-                        if let Some(ref right) = curr_ref.right {
-                            if &**right as *const Node == last_visit.0 {
-                                NodePtr(std::ptr::null())
-                            } else if let Some(ref left) = curr_ref.left {
-                                if &**left as *const Node == last_visit.0 {
-                                    NodePtr(&**right)
-                                } else {
-                                    NodePtr(&**left)
-                                }
-                            } else {
-                                NodePtr(&**right)
-                            }
-                        } else if let Some(ref left) = curr_ref.left {
-                            if &**left as *const Node == last_visit.0 {
-                                NodePtr(std::ptr::null())
-                            } else {
-                                NodePtr(&**left)
-                            }
-                        } else {
-                            NodePtr(std::ptr::null())
-                        }
-                    };
-                }
-            }
-            
-            // Visit the current node
-            visit(&*current.0);
-            last_visit = current;
-            
-            // The commented out code from C++ is preserved here as a comment:
-            // if prev.left == lastVisit then prev.left = null
-            // else if prev.right == lastVisit then prev.right = null
-        }
+        dfs_no_stack(&tree, |n| println!("{}", n.value));
     }
 }
