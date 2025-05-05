@@ -1,0 +1,21 @@
+License
+
+SPDX-License-Identifier: MIT-CMU
+
+Copyright (c) 2025 Jay Lauffer
+
+Permission to use, copy, modify, and distribute this software and its documentation for any purpose and without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies and supporting documentation, and that the name of Jay Lauffer, Carnegie Mellon University, or any contributor not be used in advertising or publicity pertaining to distribution of the software without specific written permission.
+
+THE SOFTWARE IS PROVIDED "AS IS", AND THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Ethical Use Reminder
+
+This project was created to serve need, not greed, and the author encourages all users and contributors to consider the human impact of their work. Whenever you employ this code, ask:
+
+Does this use improve well-being?
+
+Does it protect life and dignity?
+
+Is it aligned with principles of love, forgiveness, and stewardship?
+
+These guidelines are moral, not legal, and they do not impose additional conditions on the license granted above.
